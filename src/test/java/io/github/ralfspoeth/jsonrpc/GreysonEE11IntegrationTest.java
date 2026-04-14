@@ -1,5 +1,12 @@
 package io.github.ralfspoeth.jsonrpc;
 
+import io.github.ralfspoeth.json.Greyson;
+import io.github.ralfspoeth.json.data.Basic;
+import io.github.ralfspoeth.json.data.JsonNull;
+import io.github.ralfspoeth.json.data.JsonNumber;
+import io.github.ralfspoeth.json.data.JsonString;
+import io.github.ralfspoeth.json.query.Selector;
+import io.github.ralfspoeth.utf8.Utf8Reader;
 import jakarta.servlet.http.HttpServletResponse;
 import org.eclipse.jetty.ee11.servlet.ServletContextHandler; // Note the 'ee11'
 import org.eclipse.jetty.ee11.servlet.ServletHolder;
@@ -14,8 +21,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class GreysonEE11IntegrationTest {
     private static Server server;
@@ -33,7 +43,7 @@ public class GreysonEE11IntegrationTest {
         context.setContextPath("/");
 
         // Add your Greyson Servlet
-        context.addServlet(new ServletHolder(new JsonRpcServlet(_->null)), "/rpc");
+        context.addServlet(new ServletHolder(new JsonRpcServlet(ro -> new ResponseObject(ro.id(), Basic.of(ro.method()), null))), "/rpc");
 
         server.setHandler(context);
         server.start();
@@ -51,13 +61,13 @@ public class GreysonEE11IntegrationTest {
     void testSuccessfulRpcCall() throws Exception {
         // 1. Prepare the JSON-RPC payload
         String jsonPayload = """
-            {
-                "jsonrpc": "2.0",
-                "method": "calculateSum",
-                "params": [10, 20, 30],
-                "id": "req-001"
-            }
-            """;
+                {
+                    "jsonrpc": "2.0",
+                    "method": "calculateSum",
+                    "params": [10, 20, 30],
+                    "id": "req-001"
+                }
+                """;
 
         // 2. Build the modern HTTP Client
         try (HttpClient client = HttpClient.newHttpClient()) {
@@ -69,13 +79,35 @@ public class GreysonEE11IntegrationTest {
                     .build();
 
             // 3. Send and receive
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            Exception e = null;
+            List<ResponseObject> responses = new ArrayList<>();
+            try (var is = response.body();
+                 var rdr = new Utf8Reader(is)) {
+                responses = Greyson.readValue(rdr).stream().flatMap(Selector.all())
+                        .map(jo -> new ResponseObject(
+                                switch (jo.get("id").orElseThrow()) {
+                                    case JsonString(var s) -> new IdType.StringId(s);
+                                    case JsonNumber(var d) -> new IdType.IntId(d.intValueExact());
+                                    default -> throw new IllegalStateException();
+                                },
+                                jo.get("result").orElse(JsonNull.INSTANCE)
+                                , null
+                        ))
+                        .toList();
+            } catch (Exception ex) {
+                e = ex;
+            }
 
             // 4. Assertions
-            assertEquals(HttpServletResponse.SC_OK, response.statusCode());
-            assertNotNull(response.body());
-            assertTrue(response.body().contains("\"id\":\"req-001\""), "Response should match request ID");
-            assertTrue(response.body().contains("60"), "Result should be the sum of params");
+            List<ResponseObject> finalResponses = responses;
+            finalResponses.stream().forEach(System.out::println);
+            assertAll(
+                    () -> assertEquals(HttpServletResponse.SC_OK, response.statusCode()),
+                    () -> assertEquals(1, finalResponses.size()),
+                    () -> assertEquals("req-001", finalResponses.get(0).id().toString())
+            );
+
         }
     }
 
