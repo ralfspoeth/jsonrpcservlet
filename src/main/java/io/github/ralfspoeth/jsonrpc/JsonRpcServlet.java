@@ -1,7 +1,7 @@
 package io.github.ralfspoeth.jsonrpc;
 
-import io.github.ralfspoeth.json.Greyson;
 import io.github.ralfspoeth.json.data.*;
+import io.github.ralfspoeth.json.io.*;
 import io.github.ralfspoeth.json.query.Queries;
 import io.github.ralfspoeth.json.query.Selector;
 import io.github.ralfspoeth.utf8.Utf8Reader;
@@ -35,10 +35,13 @@ public class JsonRpcServlet extends HttpServlet {
             resp.setContentType("application/json");
             try (var is = req.getInputStream();
                  var rdr = new Utf8Reader(is);
+                 var jr = new JsonReader(rdr);
                  var os = resp.getOutputStream();
-                 var wrt = new Utf8Writer(os)
+                 var wrt = new Utf8Writer(os);
+                 var jw = new JsonWriter(wrt)
             ) {
-                var responses = Greyson.readValue(rdr)
+                var responses = jr.read()
+                        .map(Builder::build)
                         .stream()
                         .flatMap(Selector.all())
                         .parallel()
@@ -66,18 +69,16 @@ public class JsonRpcServlet extends HttpServlet {
                                 ).build())
                         .collect(Queries.toJsonArray());
                 if (ja.size() < 2) {
-                    ja.get(0).ifPresent(r -> Greyson.writeValue(wrt, r));
+                    ja.get(0).ifPresent(jw::write);
                 } else {
-                    Greyson.writeValue(wrt, ja);
+                    jw.write(ja);
                 }
             }
-        } else {
-            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         }
     }
 
     private static @Nullable Id from(JsonValue value) {
-        return switch(value) {
+        return switch (value) {
             case JsonString(var s) -> new Id.StringId(s);
             case JsonNumber(var n) -> new Id.IntId(n.intValue());
             case JsonNull _ -> null;
@@ -91,7 +92,7 @@ public class JsonRpcServlet extends HttpServlet {
     }
 
     private static JsonValue from(Id id) {
-        return  switch (id) {
+        return switch (id) {
             case Id.IntId(int n) -> new JsonNumber(BigDecimal.valueOf(n));
             case Id.StringId(var s) -> new JsonString(s);
         };
