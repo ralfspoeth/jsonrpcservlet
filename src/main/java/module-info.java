@@ -7,4 +7,5 @@ module io.github.ralfspoeth.rpcservlet {
     requires transitive io.github.ralfspoeth.greyson;
     requires static org.jspecify;
     requires io.github.ralfspoeth.utf8io;
+    requires io.github.ralfspoeth.basix;
 }

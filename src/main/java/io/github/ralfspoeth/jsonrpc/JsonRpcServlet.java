@@ -14,7 +14,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
-import java.lang.annotation.Repeatable;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -25,7 +24,7 @@ import static java.util.Optional.ofNullable;
 
 public class JsonRpcServlet extends HttpServlet {
 
-    private final Map<String, Function<Params, Optional<Object>> dispatcher;
+    private final Map<String, Function<Params, Optional<Object>>> dispatcher;
 
     public JsonRpcServlet(Map<String, Function<Params, Optional<Object>>> dispather) {
         this.dispatcher = dispather;
