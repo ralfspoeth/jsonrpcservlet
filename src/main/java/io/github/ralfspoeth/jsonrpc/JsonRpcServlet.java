@@ -14,21 +14,20 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.lang.annotation.Repeatable;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import static io.github.ralfspoeth.basix.fn.Functions.conditional;
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
 import static java.util.Optional.ofNullable;
 
 public class JsonRpcServlet extends HttpServlet {
 
-    private final Map<String, Function<Params, Object>> dispatcher;
+    private final Map<String, Function<Params, Optional<Object>> dispatcher;
 
-    public JsonRpcServlet(Map<String, Function<Params, Object>> dispather) {
+    public JsonRpcServlet(Map<String, Function<Params, Optional<Object>>> dispather) {
         this.dispatcher = dispather;
     }
 
@@ -47,45 +46,31 @@ public class JsonRpcServlet extends HttpServlet {
                             .readValue(rdr)
                             .orElseThrow(() -> new JsonParseException("empty input", 0, 0));
                     boolean isBatchRequest = request instanceof JsonArray;
-                    boolean isValidRequest = Stream.of(request)
+
+                    var responses = Stream.of(request)
                             .flatMap(Selector.all())
-                            .allMatch(v -> v instanceof JsonObject(var members) &&
-                                    members.containsKey("method") &&
-                                    v.get("id").filter(i -> i instanceof Aggregate || i instanceof JsonBoolean).isEmpty() &&
-                                    v.get("params").filter(Basic.class::isInstance).isEmpty() &&
-                                    members.get("jsonrpc") instanceof JsonString(var s) && s.equals("2.0")
-                            );
-                    // now process valid requests
-                    if (isValidRequest) {
-                        Stream.of(request)
-                                .flatMap(Selector.all())
-                                .parallel()
-                                .map(q -> new RequestObject(
-                                        id(q),
-                                        method(q),
-                                        params(q)))
-                                .map(this::invokeService)
-                                .filter(Objects::nonNull)
-                                .toList();
-                        ;
-                    }
-                    // invalid requests
-                    // with code -32600
-                    else {
-                        Greyson.writeValue(wrt, objectBuilder()
-                                .putBasic("id", null)
-                                .putBasic("code", -32600)
-                                .build()
-                        );
-                    }
+                            .parallel()
+                            .map(conditional(v -> v instanceof JsonObject(var members) &&
+                                            members.containsKey("method") &&
+                                            v.get("id").filter(i -> i instanceof Aggregate || i instanceof JsonBoolean).isEmpty() &&
+                                            v.get("params").filter(Basic.class::isInstance).isEmpty() &&
+                                            members.get("jsonrpc") instanceof JsonString(var s) && s.equals("2.0"),
+                                    q -> invokeService(new RequestObject(
+                                            id(q),
+                                            method(q),
+                                            params(q))
+                                    ),
+                                    q -> ResponseObject.error(id(q), objectBuilder().putBasic("id", null).putBasic("code", -32600).build())))
+                            .filter(Objects::nonNull)
+                            .toList();
+
                 }
                 // parse exception with code -32700
                 catch (JsonParseException e) {
-                    Greyson.writeValue(wrt, objectBuilder()
+                    Greyson.writeBuilder(wrt, objectBuilder()
                             .putBasic("id", null)
                             .putBasic("code", -32700)
                             .putBasic("message", e.getMessage())
-                            .build()
                     );
                 }
             }
@@ -94,8 +79,8 @@ public class JsonRpcServlet extends HttpServlet {
 
     private ResponseObject invokeService(RequestObject request) {
         return ofNullable(dispatcher.get(request.method()))
-                .map(f -> f.apply(request.params()))
-                .filter(result -> request.id()!=null)
+                .flatMap(f -> f.apply(request.params()))
+                .filter(result -> request.id() != null)
                 .map(result -> ResponseObject.result(request.id(), JsonValue.of(result)))
                 .orElse(ResponseObject.error(
                         request.id(),
