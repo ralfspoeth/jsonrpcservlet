@@ -62,6 +62,7 @@ public class JsonRpcServlet extends HttpServlet {
                                     q -> ResponseObject.error(id(q), objectBuilder().putBasic("id", null).putBasic("code", -32600).build())))
                             .filter(Objects::nonNull)
                             .toList();
+                    System.out.println(responses);
 
                 }
                 // parse exception with code -32700
