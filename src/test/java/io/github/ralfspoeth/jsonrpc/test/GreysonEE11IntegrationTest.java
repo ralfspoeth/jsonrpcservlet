@@ -27,6 +27,7 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static io.github.ralfspoeth.json.data.Builder.arrayBuilder;
@@ -51,13 +52,13 @@ public class GreysonEE11IntegrationTest {
 
         // Add your Greyson Servlet
         context.addServlet(new ServletHolder(new JsonRpcServlet(
-                Map.of("hello", p -> switch (p) {
+                Map.of("hello", p -> Optional.of(switch (p) {
                     case Params.ArrayParams(List<?> ap) -> ap.stream()
                             .map(x -> "Hello" + x)
                             .collect(Collectors.joining(", "));
                     case Params.MapParams(Map<?, ?> mp) -> mp.entrySet().stream()
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                })
+                }))
         )), "/rpc");
 
         server.setHandler(context);
