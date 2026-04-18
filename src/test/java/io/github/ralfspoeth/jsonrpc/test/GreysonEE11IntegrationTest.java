@@ -5,10 +5,7 @@ import io.github.ralfspoeth.json.data.JsonNull;
 import io.github.ralfspoeth.json.data.JsonNumber;
 import io.github.ralfspoeth.json.data.JsonString;
 import io.github.ralfspoeth.json.query.Selector;
-import io.github.ralfspoeth.jsonrpc.Id;
 import io.github.ralfspoeth.jsonrpc.JsonRpcServlet;
-import io.github.ralfspoeth.jsonrpc.Params;
-import io.github.ralfspoeth.jsonrpc.ResponseObject;
 import io.github.ralfspoeth.utf8.Utf8Reader;
 import jakarta.servlet.http.HttpServletResponse;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler; // Note the 'ee11'

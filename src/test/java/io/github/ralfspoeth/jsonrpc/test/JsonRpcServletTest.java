@@ -1,7 +1,6 @@
 package io.github.ralfspoeth.jsonrpc.test;
 
 import io.github.ralfspoeth.jsonrpc.JsonRpcServlet;
-import io.github.ralfspoeth.jsonrpc.Params;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

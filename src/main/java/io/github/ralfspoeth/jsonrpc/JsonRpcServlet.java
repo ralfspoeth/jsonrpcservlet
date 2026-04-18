@@ -14,19 +14,19 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
-import java.util.*;
-import java.util.function.Function;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static io.github.ralfspoeth.basix.fn.Functions.conditional;
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
-import static java.util.Optional.ofNullable;
 
 public class JsonRpcServlet extends HttpServlet {
 
-    private final Map<String, Function<Params, Optional<Object>>> dispatcher;
+    private final Map<String, Service> dispatcher;
 
-    public JsonRpcServlet(Map<String, Function<Params, Optional<Object>>> dispather) {
+    public JsonRpcServlet(Map<String, Service> dispather) {
         this.dispatcher = dispather;
     }
 
@@ -50,18 +50,21 @@ public class JsonRpcServlet extends HttpServlet {
                             .flatMap(Selector.all())
                             .parallel()
                             .map(conditional(v -> v instanceof JsonObject(var members) &&
-                                            members.containsKey("method") &&
-                                            v.get("id").filter(i -> i instanceof Aggregate || i instanceof JsonBoolean).isEmpty() &&
-                                            v.get("params").filter(Basic.class::isInstance).isEmpty() &&
-                                            members.get("jsonrpc") instanceof JsonString(var s) && s.equals("2.0"),
-                                    q -> invokeService(new RequestObject(
-                                            id(q),
-                                            method(q),
-                                            params(q))
-                                    ),
-                                    q -> ResponseObject.error(id(q), objectBuilder().putBasic("id", null).putBasic("code", -32600).build())))
-                            .filter(Objects::nonNull)
+                                            "2.0".equals(v.get("jsonrpc").map(JsonValue::string).orElse(null)) &&
+                                            isValidOrNullParams(members.get("params")) && isValidOrNullId(members.get("id")),
+                                    this::invokeService,
+                                    this::invalidRequest
+                            ))
                             .toList();
+                            /*
+                            .map(conditional(v -> v instanceof JsonObject(var members) &&
+                                                    members.get("jsonrpc") instanceof JsonString(var s) && s.equals("2.0") &&
+                                    hasValidOrNullId(v) && hasValidOrNullParams(v),
+                                            q -> invokeService(method(q), params(q))
+                                    ),
+                                    objectBuilder().putBasic("id", null).putBasic("code", -32600).build())))
+                            .filter(Objects::nonNull)
+                            .toList();*/
                     System.out.println(responses);
 
                 }
@@ -77,33 +80,25 @@ public class JsonRpcServlet extends HttpServlet {
         }
     }
 
-    private ResponseObject invokeService(RequestObject request) {
-        return ofNullable(dispatcher.get(request.method()))
-                .flatMap(f -> f.apply(request.params()))
-                .filter(result -> request.id() != null)
-                .map(result -> ResponseObject.result(request.id(), JsonValue.of(result)))
-                .orElse(ResponseObject.error(
-                        request.id(),
+    private JsonObject invalidRequest(JsonValue request) {
+        return objectBuilder()
+                .putBasic("id", id(request))
+                .putBasic("code", -32600)
+                .build();
+    }
+
+    private JsonObject invokeService(JsonValue request) {
+        var method = method(request);
+        var id = id(request);
+        var params = params(request);
+        return null;
+    }
+
+    /*
                         objectBuilder()
                                 .putBasic("code", -32601)
                                 .putBasic("message", "No such method: " + request.method())
-                                .build())
-                );
-    }
-
-    private static @Nullable Id id(JsonValue ro) {
-        return ro.get("id").map(value -> switch (value) {
-            case JsonString(var s) -> new Id.StringId(s);
-            case JsonNumber(var n) -> new Id.IntId(n.intValue());
-            case JsonNull _ -> null;
-            case JsonBoolean(var b) -> throw new IllegalArgumentException(
-                    "boolean " + b + " is not a valid id"
-            );
-            case Aggregate a -> throw new IllegalStateException(
-                    "illegal id " + a
-            );
-        }).orElse(null);
-    }
+                                .build())*/
 
     private static String method(JsonValue request) {
         return request.get("method")
@@ -111,15 +106,27 @@ public class JsonRpcServlet extends HttpServlet {
                 .orElseThrow();
     }
 
-    @SuppressWarnings("unchecked")
-    private static @Nullable Params params(JsonValue r) {
-        return r.get("params")
-                .map(Queries::asObject)
-                .map(o -> switch (o) {
-                    case List<?> l -> new Params.ArrayParams(l);
-                    case Map<?, ?> m -> new Params.MapParams((Map<String, ?>) m);
-                    case null, default -> throw new IllegalArgumentException("illegal " + o);
+    private static @Nullable Object id(JsonValue request) {
+        return request.get("id")
+                .flatMap(id -> switch (id) {
+                    case JsonNumber(var n) -> Optional.of(n);
+                    case JsonString(var s) -> Optional.of(s);
+                    default -> Optional.empty();
                 })
                 .orElse(null);
+    }
+
+    private static @Nullable Object params(JsonValue request) {
+        return request.get("params")
+                .map(Queries::asObject)
+                .orElse(null);
+    }
+
+    private static boolean isValidOrNullParams(@Nullable JsonValue params) {
+        return params == null || params instanceof Aggregate;
+    }
+
+    private static boolean isValidOrNullId(@Nullable JsonValue id) {
+        return id == null || id instanceof JsonNumber || id instanceof JsonString;
     }
 }
