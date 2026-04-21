@@ -9,10 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -72,13 +69,7 @@ class JsonRpcServletTest {
             }
         });
         var servlet = new JsonRpcServlet(
-                Map.of("hello", p -> Optional.of(switch (p) {
-                    case Params.ArrayParams(List<?> ap) -> ap.stream()
-                            .map(x -> "Hello" + x)
-                            .collect(Collectors.joining(", "));
-                    case Params.MapParams(Map<?, ?> mp) -> mp.entrySet().stream()
-                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                }))
+                Map.of("hello", p -> "Hello " + p)
         );
         servlet.doPost(req, resp);
     }

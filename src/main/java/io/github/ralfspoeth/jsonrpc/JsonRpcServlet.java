@@ -15,11 +15,11 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import static io.github.ralfspoeth.basix.fn.Functions.conditional;
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
 
 public class JsonRpcServlet extends HttpServlet {
@@ -44,40 +44,46 @@ public class JsonRpcServlet extends HttpServlet {
                     var request = Greyson
                             .readValue(rdr)
                             .orElseThrow(() -> new JsonParseException("empty input", 0, 0));
+
                     boolean isBatchRequest = request instanceof JsonArray;
 
                     var responses = Stream.of(request)
                             .flatMap(Selector.all())
                             .parallel()
-                            .map(conditional(v -> v instanceof JsonObject(var members) &&
-                                            "2.0".equals(v.get("jsonrpc").map(JsonValue::string).orElse(null)) &&
-                                            isValidOrNullParams(members.get("params")) && isValidOrNullId(members.get("id")),
-                                    this::invokeService,
-                                    this::invalidRequest
-                            ))
-                            .toList();
-                            /*
-                            .map(conditional(v -> v instanceof JsonObject(var members) &&
-                                                    members.get("jsonrpc") instanceof JsonString(var s) && s.equals("2.0") &&
-                                    hasValidOrNullId(v) && hasValidOrNullParams(v),
-                                            q -> invokeService(method(q), params(q))
-                                    ),
-                                    objectBuilder().putBasic("id", null).putBasic("code", -32600).build())))
+                            .map(r -> isValid(r) ? invokeService(r) : invalidRequest(r))
                             .filter(Objects::nonNull)
-                            .toList();*/
-                    System.out.println(responses);
+                            .toList();
+
+                    if (!responses.isEmpty()) {
+                        if (isBatchRequest) {
+                            Greyson.writeValue(wrt, responses.stream().collect(Queries.toJsonArray()));
+                        } else {
+                            assert responses.size() == 1;
+                            Greyson.writeValue(wrt, responses.getFirst());
+                        }
+                    }
 
                 }
                 // parse exception with code -32700
                 catch (JsonParseException e) {
                     Greyson.writeBuilder(wrt, objectBuilder()
+                            .putBasic("jsonrpc", "2.0")
                             .putBasic("id", null)
-                            .putBasic("code", -32700)
-                            .putBasic("message", e.getMessage())
-                    );
+                            .put("error", objectBuilder()
+                                    .putBasic("code", -32700)
+                                    .putBasic("message", e.getMessage())
+                            ));
                 }
             }
         }
+    }
+
+    private boolean isValid(JsonValue request) {
+        return request instanceof JsonObject(var members) &&
+                members.keySet().containsAll(Set.of("method", "jsonrpc")) &&
+                members.getOrDefault("jsonrpc", Basic.of("")).equals(Basic.of("2.0")) &&
+                isValidOrNullId(members.get("id")) &&
+                isValidOrNullParams(members.get("params"));
     }
 
     private JsonObject invalidRequest(JsonValue request) {
@@ -87,18 +93,39 @@ public class JsonRpcServlet extends HttpServlet {
                 .build();
     }
 
-    private JsonObject invokeService(JsonValue request) {
+    private @Nullable JsonObject invokeService(JsonValue request) {
         var method = method(request);
         var id = id(request);
         var params = params(request);
-        return null;
-    }
+        var service = dispatcher.get(method);
+        // no id -> notification
+        if (id == null) {
+            try {
+                service.notification(params);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            return null;
+        } else {
+            var ob = objectBuilder()
+                    .putBasic("jsonrpc", "2.0")
+                    .putBasic("id", id);
+            if (service == null) {
+                ob.put("error", objectBuilder()
+                        .putBasic("code", -32601)
+                        .putBasic("message", "No such method: " + method));
+            } else {
+                try {
+                    var result = service.request(params);
+                    ob.putBasic("result", result);
 
-    /*
-                        objectBuilder()
-                                .putBasic("code", -32601)
-                                .putBasic("message", "No such method: " + request.method())
-                                .build())*/
+                } catch (Exception ex) {
+                    ob.put("error", objectBuilder().putBasic("code", -32000)).putBasic("message", ex.getMessage());
+                }
+            }
+            return ob.build();
+        }
+    }
 
     private static String method(JsonValue request) {
         return request.get("method")

@@ -1,9 +1,8 @@
 package io.github.ralfspoeth.jsonrpc.test;
 
 import io.github.ralfspoeth.json.Greyson;
-import io.github.ralfspoeth.json.data.JsonNull;
-import io.github.ralfspoeth.json.data.JsonNumber;
-import io.github.ralfspoeth.json.data.JsonString;
+import io.github.ralfspoeth.json.data.JsonValue;
+import io.github.ralfspoeth.json.query.Pointer;
 import io.github.ralfspoeth.json.query.Selector;
 import io.github.ralfspoeth.jsonrpc.JsonRpcServlet;
 import io.github.ralfspoeth.utf8.Utf8Reader;
@@ -12,11 +11,10 @@ import org.eclipse.jetty.ee10.servlet.ServletContextHandler; // Note the 'ee11'
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
+import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,17 +22,23 @@ import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.ralfspoeth.json.data.Builder.arrayBuilder;
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class GreysonEE11IntegrationTest {
     private static Server server;
     private static int port;
+
+    private static final HttpClient client = HttpClient.newHttpClient();
+
+    private final HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:" + port + "/rpc"))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
+
 
     @BeforeAll
     static void setup() throws Exception {
@@ -43,19 +47,22 @@ public class GreysonEE11IntegrationTest {
         connector.setPort(0);
         server.addConnector(connector);
 
-        // Explicitly using the EE11 environment handler
         ServletContextHandler context = new ServletContextHandler();
         context.setContextPath("/");
 
         // Add your Greyson Servlet
         context.addServlet(new ServletHolder(new JsonRpcServlet(
-                Map.of("hello", p -> Optional.of(switch (p) {
-                    case Params.ArrayParams(List<?> ap) -> ap.stream()
-                            .map(x -> "Hello" + x)
-                            .collect(Collectors.joining(", "));
-                    case Params.MapParams(Map<?, ?> mp) -> mp.entrySet().stream()
-                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                }))
+                Map.of("hello", p -> "hello " + p,
+                        "sum", p -> switch (p) {
+                            case List<?> bigDecimals -> {
+                                var tmp = BigDecimal.ZERO;
+                                for (var bd : bigDecimals) {
+                                    if (bd instanceof BigDecimal x) {tmp = tmp.add(x);}
+                                }
+                                yield tmp;
+                            }
+                            case null, default -> BigDecimal.ZERO;
+                        })
         )), "/rpc");
 
         server.setHandler(context);
@@ -64,13 +71,7 @@ public class GreysonEE11IntegrationTest {
     }
 
     @Test
-    void testGreyson() throws Exception {
-
-    }
-
-
-    @Test
-    @DisplayName("Should process a valid JSON-RPC 2.0 request via Greyson")
+    @DisplayName("Call sum with 10, 20, 30 yielding 60")
     void testSuccessfulRpcCall() throws Exception {
         // 1. Prepare the JSON-RPC payload
         var rq = objectBuilder().putBasic("jsonrpc", "2.0")
@@ -79,54 +80,73 @@ public class GreysonEE11IntegrationTest {
                 .put("params", arrayBuilder().addBasic(10).addBasic(20).addBasic(30))
                 .build();
 
-        // 2. Build the modern HTTP Client
-        try (HttpClient client = HttpClient.newHttpClient()) {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:" + port + "/rpc"))
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(rq.json()))
-                    .build();
+        HttpRequest request = requestBuilder
+                .POST(HttpRequest.BodyPublishers.ofString(rq.json()))
+                .build();
 
-            // 3. Send and receive
-            var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            Exception e = null;
-            List<ResponseObject> responses = new ArrayList<>();
-            try (var is = response.body();
-                 var rdr = new Utf8Reader(is)) {
-                responses = Greyson.readValue(rdr)
-                        .stream()
-                        .flatMap(Selector.all())
-                        .map(jo -> new ResponseObject(
-                                switch (jo.get("id").orElseThrow()) {
-                                    case JsonString(var s) -> new Id.StringId(s);
-                                    case JsonNumber(var d) -> new Id.IntId(d.intValueExact());
-                                    default -> throw new IllegalStateException();
-                                },
-                                jo.get("result").orElse(JsonNull.INSTANCE)
-                                , null
-                        ))
-                        .toList();
-            } catch (Exception ex) {
-                e = ex;
-            }
-
-            // 4. Assertions
-            List<ResponseObject> finalResponses = responses;
-            finalResponses.stream().forEach(System.out::println);
-            assertAll(
-                    () -> assertEquals(HttpServletResponse.SC_OK, response.statusCode()),
-                    () -> assertEquals(1, finalResponses.size()),
-                    () -> assertEquals("req-001", finalResponses.get(0).id().toString())
-            );
-
+        // 3. Send and receive
+        var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        AtomicReference<Exception> e = new AtomicReference<>();
+        List<JsonValue> responses = new ArrayList<>();
+        try (var is = response.body();
+             var rdr = new Utf8Reader(is)) {
+            Greyson.readValue(rdr)
+                    .stream()
+                    .flatMap(Selector.all())
+                    .forEach(responses::add);
+        } catch (Exception ex) {
+            e.set(ex);
         }
+
+        // 4. Assertions
+        assertAll(
+                () -> assertNull(e.get()),
+                () -> assertEquals(HttpServletResponse.SC_OK, response.statusCode()),
+                () -> assertEquals(1, responses.size()),
+                () -> assertEquals("req-001", Pointer.self().member("id").stringValue(responses.getFirst()).orElseThrow()),
+                () -> assertEquals(60, Pointer.self().member("result").intValue(responses.getFirst()).orElseThrow())
+        );
+
+    }
+
+    @Test
+    void testSingleNotification() throws IOException, InterruptedException {
+        // given
+        var notification = objectBuilder().putBasic("jsonrpc", "2.0").putBasic("method", "sum").build();
+        var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(notification.json())).build();
+        // when
+        var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        // then
+        var result = Greyson.readValue(new Utf8Reader(response.body()));
+        assertAll(
+                () -> assertTrue(result.isEmpty())
+        );
+    }
+
+
+    @Test
+    void testTwoNotifications() throws IOException, InterruptedException {
+        // given
+        var notification1 = objectBuilder().putBasic("jsonrpc", "2.0").putBasic("method", "sum").build();
+        var notification2 = objectBuilder().putBasic("jsonrpc", "2.0").putBasic("method", "hello").build();
+        var notis = arrayBuilder().add(notification1).add(notification2).build();
+        var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(notis.json())).build();
+        // when
+        var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        // then
+        var result = Greyson.readValue(new Utf8Reader(response.body()));
+        assertAll(
+                () -> assertTrue(result.isEmpty())
+        );
     }
 
     @AfterAll
     static void stopJetty() throws Exception {
         if (server != null) {
             server.stop();
+        }
+        if (client != null) {
+            client.close();
         }
     }
 }
