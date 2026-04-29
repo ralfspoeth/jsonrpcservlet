@@ -89,7 +89,7 @@ public class JsonRpcServlet extends HttpServlet {
     private JsonObject invalidRequest(JsonValue request) {
         return objectBuilder()
                 .putBasic("id", id(request))
-                .putBasic("code", -32600)
+                .put("error", objectBuilder().putBasic("code", -32600))
                 .build();
     }
 

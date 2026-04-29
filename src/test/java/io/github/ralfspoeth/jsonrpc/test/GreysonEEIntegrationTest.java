@@ -28,7 +28,7 @@ import static io.github.ralfspoeth.json.data.Builder.arrayBuilder;
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class GreysonEE11IntegrationTest {
+public class GreysonEEIntegrationTest {
     private static Server server;
     private static int port;
 
