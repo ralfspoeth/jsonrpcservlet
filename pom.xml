@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>jsonrpcservlet</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 
 
     <name>jsonrpcservlet</name>
@@ -21,7 +21,7 @@
     <scm>
         <developerConnection>scm:git:https://github.com/ralfspoeth/jsonrpcservlet.git</developerConnection>
         <url>scm:git:https://github.com/ralfspoeth/jsonrpcservlet</url>
-        <tag>jsonrpcservlet-0.0.1</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <properties>
