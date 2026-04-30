@@ -15,7 +15,8 @@ A Java Servlet for handling JSON-RPC 2.0 requests.
 
 ## Installation
 
-To include `jsonrpcservlet` in your Maven project, add the following dependency to your `pom.xml`:
+To include `jsonrpcservlet` in your Maven project, add the following dependency 
+to your `pom.xml`:
 
 ```xml
 <dependency>
@@ -27,7 +28,8 @@ To include `jsonrpcservlet` in your Maven project, add the following dependency 
 
 ## Usage
 
-(Further details on how to configure and use the servlet will be added here, including examples of how to define RPC methods and register them with the servlet.)
+(Further details on how to configure and use the servlet will be added here, 
+including examples of how to define RPC methods and register them with the servlet.)
 
 ## Building from Source
 
