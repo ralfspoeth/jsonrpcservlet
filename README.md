@@ -25,7 +25,7 @@ to your `pom.xml`:
 <dependency>
     <groupId>io.github.ralfspoeth</groupId>
     <artifactId>jsonrpcservlet</artifactId>
-    <version>1.0.0-SNAPSHOT</version> <!-- Or the latest release version -->
+    <version>0.0.1</version> <!-- Or the latest release version -->
 </dependency>
 ```
 
