@@ -11,7 +11,7 @@
     </parent>
 
     <artifactId>jsonrpcservlet</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>0.0.1-SNAPSHOT</version>
 
 
     <name>jsonrpcservlet</name>
@@ -21,8 +21,8 @@
     <url>https://github.com/ralfspoeth/jsonrpcservlet</url>
 
     <scm>
-        <developerConnection>scm:git:https://github.com/ralfspoeth/json.git</developerConnection>
-        <url>scm:git:https://github.com/ralfspoeth/json</url>
+        <developerConnection>scm:git:https://github.com/ralfspoeth/jsonrpcservlet.git</developerConnection>
+        <url>scm:git:https://github.com/ralfspoeth/jsonrpcservlet</url>
         <tag>HEAD</tag>
     </scm>
 
