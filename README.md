@@ -4,7 +4,10 @@ A Java Servlet for handling JSON-RPC 2.0 requests.
 
 ## Overview
 
-`jsonrpcservlet` is a lightweight and easy-to-use Java Servlet designed to simplify the implementation of JSON-RPC 2.0 services within your web applications. It leverages `io.github.ralfspoeth:json` for JSON processing and integrates seamlessly with standard Servlet containers.
+`jsonrpcservlet` is a lightweight and easy-to-use Java Servlet designed to 
+simplify the implementation of JSON-RPC 2.0 services within your web applications.
+It leverages `io.github.ralfspoeth:json` for JSON processing and integrates 
+seamlessly with standard Servlet containers.
 
 ## Features
 
@@ -38,7 +41,6 @@ This project uses Maven. To build it, navigate to the project root and run:
 ```bash
 mvn clean install
 ```
-
 ## License
 
-(License information will be added here.)
+MIT. Copyright 2026 Ralf Spöth.
