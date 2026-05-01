@@ -5,11 +5,11 @@ import io.github.ralfspoeth.json.data.*;
 import io.github.ralfspoeth.json.io.JsonParseException;
 import io.github.ralfspoeth.json.query.Queries;
 import io.github.ralfspoeth.json.query.Selector;
-import io.github.ralfspoeth.utf8.Utf8Reader;
-import io.github.ralfspoeth.utf8.Utf8Writer;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -28,7 +28,7 @@ public class JsonRpcProcessor {
         this.dispatcher = dispatcher;
     }
 
-    public void processRequest(Utf8Reader rdr, Utf8Writer wrt) throws IOException {
+    public void processRequest(Reader rdr, Writer wrt) throws IOException {
         try {
             var request = Greyson
                     .readValue(rdr)

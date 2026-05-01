@@ -1,3 +1,6 @@
+import org.jspecify.annotations.NullMarked;
+
+@NullMarked
 open module io.github.ralfspoeth.rpcservlet.test {
     requires transitive io.github.ralfspoeth.rpcservlet;
     // logging

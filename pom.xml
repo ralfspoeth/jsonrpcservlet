@@ -103,10 +103,20 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- web sockets -->
+        <dependency>
+            <groupId>jakarta.websocket</groupId>
+            <artifactId>jakarta.websocket-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.websocket</groupId>
+            <artifactId>jakarta.websocket-client-api</artifactId>
+        </dependency>
         <!-- servlet api -->
         <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
+<!--           <scope>provided</scope>-->
         </dependency>
         <!-- jspecify -->
         <dependency>
