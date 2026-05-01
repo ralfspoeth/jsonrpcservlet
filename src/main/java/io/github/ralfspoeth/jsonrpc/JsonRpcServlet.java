@@ -15,7 +15,7 @@ import java.util.Map;
  * A servlet that handles JSON-RPC 2.0 requests.
  * It dispatches requests to registered {@link Service} implementations.
  */
-public class JsonRpcServlet extends HttpServlet {
+public abstract class JsonRpcServlet extends HttpServlet {
 
     /**
      * The MIME type for JSON content.

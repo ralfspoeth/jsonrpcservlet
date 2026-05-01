@@ -70,7 +70,7 @@ public class GreysonEEIntegrationTest {
                         "boom", _ -> {
                             throw new RuntimeException("boom");
                         })
-        )), "/rpc");
+        ){}), "/rpc");
 
         server.setHandler(context);
         server.start();

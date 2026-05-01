@@ -70,7 +70,7 @@ class JsonRpcServletTest {
         });
         var servlet = new JsonRpcServlet(
                 Map.of("hello", p -> "Hello " + p)
-        );
+        ){};
         servlet.doPost(req, resp);
     }
 }
