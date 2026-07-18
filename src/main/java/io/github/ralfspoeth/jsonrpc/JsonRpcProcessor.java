@@ -3,214 +3,156 @@ package io.github.ralfspoeth.jsonrpc;
 import io.github.ralfspoeth.json.Greyson;
 import io.github.ralfspoeth.json.data.*;
 import io.github.ralfspoeth.json.io.JsonParseException;
-import io.github.ralfspoeth.json.query.Queries;
-import io.github.ralfspoeth.json.query.Selector;
 import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Stream;
+import java.util.function.BiFunction;
 
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
 
+/**
+ * A JSON-RPC 2.0 server-side processor.
+ * <p>
+ * The incoming request is read into a {@link Builder} which is then
+ * transformed <em>in place</em> into the response: the {@code jsonrpc}
+ * and {@code id} members of a valid request are retained, {@code method}
+ * and {@code params} are removed, and either {@code result} or
+ * {@code error} is added.
+ * <p>
+ * The business function receives the method name and the {@code params}
+ * value ({@link JsonNull#INSTANCE} if absent) and returns the result as
+ * a {@link JsonValue}, never {@code null} &mdash; use {@link JsonNull#INSTANCE}
+ * for a null result. Exceptions map to
+ * spec error codes: {@link NoSuchElementException}/{@link UnsupportedOperationException}
+ * &rarr; -32601 (method not found), {@link IllegalArgumentException}
+ * &rarr; -32602 (invalid params), any other {@link RuntimeException}
+ * &rarr; -32603 (internal error).
+ */
 public class JsonRpcProcessor {
-    /**
-     * The map of service implementations indexed by method name.
-     */
-    private final Map<String, Service> dispatcher;
+    private static final String VERSION = "2.0";
 
-    public JsonRpcProcessor(Map<String, Service> dispatcher) {
-        this.dispatcher = dispatcher;
+    private final BiFunction<String, JsonValue, JsonValue> businessFunction;
+
+    public JsonRpcProcessor(BiFunction<String, JsonValue, JsonValue> businessFunction) {
+        this.businessFunction = Objects.requireNonNull(businessFunction);
     }
 
-    public void processRequest(Reader rdr, Writer wrt) throws IOException {
+    /**
+     * Read a single request or a batch of requests from {@code in},
+     * process it, and write the response(s) to {@code out}.
+     * Writes nothing at all if the input consists of notifications only.
+     */
+    public void process(Reader in, Writer out) throws IOException {
+        final Builder<? extends JsonValue> builder;
         try {
-            var request = Greyson
-                    .readValue(rdr)
-                    .orElseThrow(() -> new JsonParseException("empty input", 0, 0));
-
-            // empty batch request
-            if (request instanceof JsonArray(var l) && l.isEmpty()) {
-                Greyson.writeValue(wrt, invalidRequest("Empty Batch Request"));
-            } else {
-                // invoke the services for each valid request in parallel
-                var responses = Stream.of(request)
-                        .flatMap(Selector.all()) // unfolds a batch request
-                        .parallel()
-                        .map(r -> isValid(r) ?
-                                invokeService(r) :
-                                invalidRequest("Invalid request object")
-                        )
-                        .filter(Objects::nonNull) // return value from notifications
-                        .toList();
-
-                // no empty arrays
-                if (!responses.isEmpty()) {
-                    // as array if and only if the request has been a batch request
-                    if (request instanceof JsonArray) {
-                        Greyson.writeValue(wrt, responses.stream().collect(Queries.toJsonArray()));
+            var read = Greyson.readBuilder(in);
+            if (read.isEmpty()) { // empty input
+                Greyson.writeValue(out, error(JsonNull.INSTANCE, -32700, "Parse error").build());
+                return;
+            }
+            builder = read.get();
+        } catch (JsonParseException e) {
+            Greyson.writeValue(out, error(JsonNull.INSTANCE, -32700, "Parse error").build());
+            return;
+        }
+        switch (builder) {
+            // single request
+            case Builder.ObjectBuilder ob -> {
+                var response = respond(ob);
+                if (response != null) {
+                    Greyson.writeValue(out, response.build());
+                }
+            }
+            // batch
+            case Builder.ArrayBuilder ab -> {
+                if (ab.isEmpty()) { // rpc call with an empty array is invalid
+                    Greyson.writeValue(out, error(JsonNull.INSTANCE, -32600, "Invalid Request").build());
+                    return;
+                }
+                for (var li = ab.data().listIterator(); li.hasNext(); ) {
+                    var response = respond(li.next());
+                    if (response != null) {
+                        li.set(response);
                     } else {
-                        assert responses.size() == 1;
-                        Greyson.writeValue(wrt, responses.getFirst());
+                        li.remove();
                     }
                 }
-            }
-        }
-        // parse exception with code -32700
-        catch (JsonParseException e) {
-            Greyson.writeValue(wrt, parseError(e));
-        }
-    }
 
-    /**
-     * Checks if a given {@link JsonValue} represents a valid JSON-RPC request.
-     *
-     * @param request The {@link JsonValue} to validate.
-     * @return {@code true} if the request is valid, {@code false} otherwise.
-     */
-    static boolean isValid(JsonValue request) {
-        return request instanceof JsonObject(var members) &&
-                request.get("jsonrpc").flatMap(JsonValue::string).orElse("").equals("2.0") &&
-                request.get("method").filter(JsonString.class::isInstance).isPresent() &&
-                isValidOrNullId(members.get("id")) &&
-                isValidOrNullParams(members.get("params"));
-    }
-
-    /**
-     * Creates an {@link JsonObject} representing an "Invalid Request" error response.
-     *
-     * @return An {@link JsonObject} with error code -32600.
-     */
-    static JsonObject invalidRequest(String message) {
-        return Builder.objectBuilder()
-                .putBasic("jsonrpc", "2.0")
-                .putBasic("id", null)
-                .put("error", Builder.objectBuilder()
-                        .putBasic("code", -32600)
-                        .putBasic("message", message))
-                .build();
-    }
-
-    /**
-     * Invokes the appropriate service method based on the JSON-RPC request.
-     *
-     * @param request The {@link JsonValue} representing the JSON-RPC request.
-     * @return A {@link JsonObject} representing the JSON-RPC response, or {@code null} if it's a notification.
-     */
-    @Nullable JsonObject invokeService(JsonValue request) {
-        var method = method(request);
-        var id = id(request);
-        var params = params(request);
-        var service = dispatcher.get(method);
-
-        // notification
-        if (id == null) {
-            if (service != null) {
-                try {
-                    service.notification(params);
-                } catch (Exception _) {
-                    // ignore silently
+                if (!ab.data().isEmpty()) { // anything left after dropping notifications?
+                    Greyson.writeBuilder(out, ab);
                 }
+            }
+            // a top-level basic value is not a valid request
+            case Builder.BasicBuilder ignored ->
+                    Greyson.writeValue(out, error(JsonNull.INSTANCE, -32600, "Invalid Request").build());
+        }
+    }
+
+    /**
+     * Process a single request builder in place and return the response
+     * builder, or {@code null} for notifications.
+     */
+    private Builder.@Nullable ObjectBuilder respond(Builder<? extends JsonValue> element) {
+        if (!(element instanceof Builder.ObjectBuilder ob)) {
+            return error(JsonNull.INSTANCE, -32600, "Invalid Request");
+        }
+        var request = ob.build(); // immutable snapshot for validation
+        if (!isValidRequest(request)) {
+            var id = request.get("id").filter(JsonRpcProcessor::isValidId).orElse(JsonNull.INSTANCE);
+            return error(id, -32600, "Invalid Request");
+        }
+        var method = request.get("method").flatMap(JsonValue::string).orElseThrow();
+        var params = request.get("params").orElse(JsonNull.INSTANCE);
+        if (!request.members().containsKey("id")) { // notification: invoke, never respond
+            try {
+                businessFunction.apply(method, params);
+            } catch (RuntimeException ignored) {
+                // errors of notifications are never reported
             }
             return null;
-        } else {
-            var ob = Builder.objectBuilder()
-                    .putBasic("jsonrpc", "2.0")
-                    .putBasic("id", id);
-            if (service == null) {
-                ob.put("error", Builder.objectBuilder()
-                        .putBasic("code", -32601)
-                        .putBasic("message", "No such method: " + method));
-            } else {
-                try {
-                    var result = service.request(params);
-                    ob.putBasic("result", result);
-
-                } catch (Exception ex) {
-                    ob.put("error", Builder.objectBuilder()
-                            .putBasic("code", -32000)
-                            .putBasic("message", ex.getMessage()));
-                }
-            }
-            return ob.build();
         }
+        // in-place transformation of the request into the response:
+        // jsonrpc and id survive, method and params are removed,
+        // result or error is added
+        ob.remove("method").remove("params");
+        try {
+            ob.put("result", businessFunction.apply(method, params));
+        } catch (NoSuchElementException | UnsupportedOperationException e) {
+            ob.put("error", errorObject(-32601, "Method not found"));
+        } catch (IllegalArgumentException e) {
+            ob.put("error", errorObject(-32602, "Invalid params"));
+        } catch (RuntimeException e) {
+            ob.put("error", errorObject(-32603, "Internal error"));
+        }
+        return ob;
     }
 
-    private static JsonObject parseError(JsonParseException e) {
+    private static boolean isValidRequest(JsonObject request) {
+        return request.get("jsonrpc").flatMap(JsonValue::string).filter(VERSION::equals).isPresent()
+                && request.get("method").flatMap(JsonValue::string).isPresent()
+                && request.get("params").map(p -> p instanceof Aggregate).orElse(true)
+                && (!request.members().containsKey("id") || isValidId(request.members().get("id")));
+    }
+
+    private static boolean isValidId(JsonValue id) {
+        return id instanceof JsonString || id instanceof JsonNumber || id instanceof JsonNull;
+    }
+
+    private static Builder.ObjectBuilder error(JsonValue id, int code, String message) {
         return objectBuilder()
-                .putBasic("jsonrpc", "2.0")
-                .putBasic("id", null)
-                .put("error", objectBuilder()
-                        .putBasic("code", -32700)
-                        .putBasic("message", e.getMessage())
-                ).build();
+                .putBasic("jsonrpc", VERSION)
+                .put("error", errorObject(code, message))
+                .put("id", id);
     }
 
-    /**
-     * Extracts the method name from a JSON-RPC request.
-     *
-     * @param request The {@link JsonValue} representing the JSON-RPC request.
-     * @return The method name as a {@link String}.
-     * @throws NoSuchElementException If the "method" field is not found.
-     */
-    static String method(JsonValue request) {
-        return request.get("method")
-                .flatMap(JsonValue::string)
-                .orElseThrow();
-    }
-
-    /**
-     * Extracts the ID from a JSON-RPC request.
-     *
-     * @param request The {@link JsonValue} representing the JSON-RPC request.
-     * @return The ID as an {@link Object} (either a {@link String} or a {@link Number}), or {@code null} if not present.
-     */
-    static @Nullable Object id(JsonValue request) {
-        return request.get("id")
-                .flatMap(id -> switch (id) {
-                    case JsonNumber(var n) -> Optional.of(n);
-                    case JsonString(var s) -> Optional.of(s);
-                    default -> Optional.empty();
-                })
-                .orElse(null);
-    }
-
-    /**
-     * Extracts the parameters from a JSON-RPC request.
-     *
-     * @param request The {@link JsonValue} representing the JSON-RPC request.
-     * @return The parameters as an {@link Object}, or {@code null} if not present.
-     */
-    static @Nullable Object params(JsonValue request) {
-        return request.get("params")
-                .map(Queries::asObject)
-                .orElse(null);
-    }
-
-    /**
-     * Checks if the "params" field in a JSON-RPC request is valid or null.
-     * Valid parameters can be an {@link Aggregate} (JsonArray or JsonObject) or {@code null}.
-     *
-     * @param params The {@link JsonValue} representing the "params" field.
-     * @return {@code true} if the parameters are valid or null, {@code false} otherwise.
-     */
-    static boolean isValidOrNullParams(@Nullable JsonValue params) {
-        return params == null || params instanceof Aggregate;
-    }
-
-    /**
-     * Checks if the "id" field in a JSON-RPC request is valid or null.
-     * Valid IDs can be a {@link JsonNumber}, {@link JsonString}, or {@link JsonNull}.
-     *
-     * @param id The {@link JsonValue} representing the "id" field.
-     * @return {@code true} if the ID is valid or null, {@code false} otherwise.
-     */
-    static boolean isValidOrNullId(@Nullable JsonValue id) {
-        return id == null || id instanceof JsonNumber || id instanceof JsonString || id instanceof JsonNull;
+    private static JsonObject errorObject(int code, String message) {
+        return objectBuilder()
+                .putBasic("code", code)
+                .putBasic("message", message)
+                .build();
     }
 }

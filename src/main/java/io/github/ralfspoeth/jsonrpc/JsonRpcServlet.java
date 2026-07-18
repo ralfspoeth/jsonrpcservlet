@@ -1,9 +1,9 @@
 package io.github.ralfspoeth.jsonrpc;
 
 import io.github.ralfspoeth.json.data.*;
+import io.github.ralfspoeth.json.query.Queries;
 import io.github.ralfspoeth.utf8.Utf8Reader;
 import io.github.ralfspoeth.utf8.Utf8Writer;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -30,7 +30,13 @@ public abstract class JsonRpcServlet extends HttpServlet {
      * @param dispatcher A map where keys are method names and values are {@link Service} instances.
      */
     public JsonRpcServlet(Map<String, Service> dispatcher) {
-        jsonRpcProcessor = new JsonRpcProcessor(dispatcher);
+        jsonRpcProcessor = new JsonRpcProcessor((s, v) -> {
+            try {
+                return JsonValue.of(dispatcher.get(s).request(Queries.asObject(v)));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     /**
@@ -39,17 +45,16 @@ public abstract class JsonRpcServlet extends HttpServlet {
      *
      * @param req  The HttpServletRequest object that contains the request the client has made of the servlet.
      * @param resp The HttpServletResponse object that contains the response the servlet sends to the client.
-     * @throws ServletException If an input or output error is detected when the servlet handles the request.
      * @throws IOException      If the request for the POST could not be handled.
      */
     @Override
-    public void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    public void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         if (JSON_CONTENT_TYPE.equals(req.getContentType())) {
             resp.setContentType(JSON_CONTENT_TYPE);
             try (var rdr = new Utf8Reader(req.getInputStream());
                  var wrt = new Utf8Writer(resp.getOutputStream())
             ) {
-                jsonRpcProcessor.processRequest(rdr, wrt);
+                jsonRpcProcessor.process(rdr, wrt);
             }
         } else {
             resp.setStatus(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);

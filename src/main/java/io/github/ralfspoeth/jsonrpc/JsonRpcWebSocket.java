@@ -1,6 +1,8 @@
 package io.github.ralfspoeth.jsonrpc;
 
 
+import io.github.ralfspoeth.json.data.JsonValue;
+import io.github.ralfspoeth.json.query.Queries;
 import jakarta.websocket.OnMessage;
 
 import java.io.IOException;
@@ -41,7 +43,13 @@ public abstract class JsonRpcWebSocket {
      *                   {@link Service} instances handling the corresponding calls.
      */
     protected JsonRpcWebSocket(Map<String, Service> dispatcher) {
-        this.jsonRpcProcessor = new JsonRpcProcessor(dispatcher);
+        this.jsonRpcProcessor = new JsonRpcProcessor((s, v) -> {
+            try {
+                return JsonValue.of(dispatcher.get(s).request(Queries.asObject(v)));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     /**
@@ -56,13 +64,13 @@ public abstract class JsonRpcWebSocket {
      *
      * @param message the raw JSON text received from the WebSocket peer.
      * @return the serialized JSON-RPC response, or an empty string if the
-     *         request was a notification (or a batch of notifications).
+     * request was a notification (or a batch of notifications).
      * @throws IOException if reading or writing the JSON payload fails.
      */
     @OnMessage
     public String onMessage(String message) throws IOException {
-        try(var rdr = Reader.of(message); var wrtr = new StringWriter()) {
-            jsonRpcProcessor.processRequest(rdr, wrtr);
+        try (var rdr = Reader.of(message); var wrtr = new StringWriter()) {
+            jsonRpcProcessor.process(rdr, wrtr);
             return wrtr.toString();
         }
     }
