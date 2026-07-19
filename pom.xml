@@ -8,6 +8,11 @@
         <version>2.0.8</version>
     </parent>
 
+    <properties>
+        <maven.compiler.release>26</maven.compiler.release>
+        <revision>0.0.3-SNAPSHOT</revision>
+    </properties>
+
     <artifactId>json-rpc</artifactId>
     <version>${revision}</version>
     <packaging>pom</packaging>
@@ -32,11 +37,6 @@
         <url>scm:git:https://github.com/ralfspoeth/jsonrpcservlet</url>
         <tag>HEAD</tag>
     </scm>
-
-    <properties>
-        <maven.compiler.release>26</maven.compiler.release>
-        <revision>0.0.3-SNAPSHOT</revision>
-    </properties>
 
     <build>
         <plugins>
