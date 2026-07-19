@@ -44,22 +44,22 @@ public class JsonRpcProcessor {
     }
 
     /**
-     * Creates a processor that dispatches to {@link Service} implementations
+     * Creates a processor that dispatches to {@link Procedure} implementations
      * by method name. Unknown methods map to -32601 (method not found);
-     * runtime exceptions thrown by services propagate unwrapped so the
+     * runtime exceptions thrown by procedures propagate unwrapped so the
      * spec error-code mapping documented on this class applies.
      *
-     * @param dispatcher a map from method names to {@link Service} instances
+     * @param dispatcher a map from method names to {@link Procedure} instances
      */
-    public static JsonRpcProcessor of(Map<String, Service> dispatcher) {
+    public static JsonRpcProcessor of(Map<String, Procedure> dispatcher) {
         Objects.requireNonNull(dispatcher);
         return new JsonRpcProcessor((method, params) -> {
-            var service = dispatcher.get(method);
-            if (service == null) {
+            var procedure = dispatcher.get(method);
+            if (procedure == null) {
                 throw new NoSuchElementException("Method not found: " + method);
             }
             try {
-                return JsonValue.of(service.request(Queries.asObject(params)));
+                return JsonValue.of(procedure.request(Queries.asObject(params)));
             } catch (RuntimeException e) {
                 throw e;
             } catch (Exception e) {

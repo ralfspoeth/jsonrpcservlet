@@ -9,7 +9,7 @@ import io.github.ralfspoeth.json.data.JsonString;
 import io.github.ralfspoeth.json.data.JsonValue;
 import io.github.ralfspoeth.json.query.Selector;
 import io.github.ralfspoeth.jsonrpc.JsonRpcWebSocket;
-import io.github.ralfspoeth.jsonrpc.Service;
+import io.github.ralfspoeth.jsonrpc.Procedure;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -37,16 +37,16 @@ class JsonRpcWebSocketTest {
      * Minimal concrete subclass since {@link JsonRpcWebSocket} is abstract.
      */
     private static final class TestEndpoint extends JsonRpcWebSocket {
-        TestEndpoint(Map<String, Service> dispatcher) {
+        TestEndpoint(Map<String, Procedure> dispatcher) {
             super(dispatcher);
         }
     }
 
-    private static TestEndpoint endpoint(Map<String, Service> dispatcher) {
+    private static TestEndpoint endpoint(Map<String, Procedure> dispatcher) {
         return new TestEndpoint(dispatcher);
     }
 
-    private static final Map<String, Service> defaultDispatcher = Map.of(
+    private static final Map<String, Procedure> defaultDispatcher = Map.of(
             "hello", p -> "hello " + p,
             "sum", p -> switch (p) {
                 case List<?> xs -> {
@@ -87,7 +87,7 @@ class JsonRpcWebSocketTest {
     @DisplayName("Single notification returns an empty string and no reply is sent")
     void singleNotification() throws IOException {
         var sideEffect = new AtomicReference<>();
-        var dispatcher = Map.<String, Service>of(
+        var dispatcher = Map.<String, Procedure>of(
                 "tap", p -> {
                     sideEffect.set(p);
                     return null;
@@ -141,7 +141,7 @@ class JsonRpcWebSocketTest {
     @DisplayName("Batch of pure notifications returns the empty string")
     void batchOfNotifications() throws IOException {
         var counter = new AtomicInteger();
-        var dispatcher = Map.<String, Service>of(
+        var dispatcher = Map.<String, Procedure>of(
                 "tick", _ -> {
                     counter.incrementAndGet();
                     return null;
@@ -205,7 +205,7 @@ class JsonRpcWebSocketTest {
     }
 
     @Test
-    @DisplayName("Service throwing an exception yields -32000 with its message")
+    @DisplayName("Procedure throwing an exception yields -32000 with its message")
     void serviceException() throws IOException {
         var rq = objectBuilder()
                 .putBasic("jsonrpc", "2.0")

@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * A servlet that handles JSON-RPC 2.0 requests.
- * It dispatches requests to registered {@link Service} implementations.
+ * It dispatches requests to registered {@link Procedure} implementations.
  */
 public abstract class JsonRpcServlet extends HttpServlet {
 
@@ -23,11 +23,11 @@ public abstract class JsonRpcServlet extends HttpServlet {
     private final JsonRpcProcessor jsonRpcProcessor;
 
     /**
-     * Constructs a new JsonRpcServlet with the given service dispatcher.
+     * Constructs a new JsonRpcServlet with the given procedure dispatcher.
      *
-     * @param dispatcher A map where keys are method names and values are {@link Service} instances.
+     * @param dispatcher A map where keys are method names and values are {@link Procedure} instances.
      */
-    public JsonRpcServlet(Map<String, Service> dispatcher) {
+    public JsonRpcServlet(Map<String, Procedure> dispatcher) {
         jsonRpcProcessor = JsonRpcProcessor.of(dispatcher);
     }
 

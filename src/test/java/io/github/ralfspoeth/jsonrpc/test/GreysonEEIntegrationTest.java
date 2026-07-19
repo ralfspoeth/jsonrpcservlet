@@ -249,7 +249,7 @@ public class GreysonEEIntegrationTest {
     }
 
     @Test
-    @DisplayName("Service throwing yields error response with matching id")
+    @DisplayName("Procedure throwing yields error response with matching id")
     void testInternalErrorFromService() throws IOException, InterruptedException {
         var rq = objectBuilder()
                 .putBasic("jsonrpc", "2.0")

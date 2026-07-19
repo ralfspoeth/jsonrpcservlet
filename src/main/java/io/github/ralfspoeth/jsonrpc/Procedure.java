@@ -3,11 +3,11 @@ package io.github.ralfspoeth.jsonrpc;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A functional interface representing a service.
+ * A functional interface representing a procedure.
  * Implementations of this interface handle incoming requests and notifications.
  */
 @FunctionalInterface
-public interface Service {
+public interface Procedure {
 
     /**
      * Handles a single request.

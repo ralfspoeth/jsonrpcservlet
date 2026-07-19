@@ -14,7 +14,7 @@ import java.util.Map;
  * <p>
  * Concrete subclasses are expected to be annotated with
  * {@link jakarta.websocket.server.ServerEndpoint} (or registered programmatically)
- * and to provide a dispatcher mapping method names to {@link Service}
+ * and to provide a dispatcher mapping method names to {@link Procedure}
  * implementations through the constructor.
  * <p>
  * Each incoming text message is processed by an internal
@@ -28,19 +28,19 @@ import java.util.Map;
  *
  * @see JsonRpcServlet
  * @see JsonRpcProcessor
- * @see Service
+ * @see Procedure
  */
 public abstract class JsonRpcWebSocket {
 
     private final JsonRpcProcessor jsonRpcProcessor;
 
     /**
-     * Constructs a new JsonRpcWebSocket with the given service dispatcher.
+     * Constructs a new JsonRpcWebSocket with the given procedure dispatcher.
      *
      * @param dispatcher A map where keys are method names and values are
-     *                   {@link Service} instances handling the corresponding calls.
+     *                   {@link Procedure} instances handling the corresponding calls.
      */
-    protected JsonRpcWebSocket(Map<String, Service> dispatcher) {
+    protected JsonRpcWebSocket(Map<String, Procedure> dispatcher) {
         this.jsonRpcProcessor = JsonRpcProcessor.of(dispatcher);
     }
 
