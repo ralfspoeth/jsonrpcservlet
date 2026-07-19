@@ -10,7 +10,7 @@
 
     <properties>
         <maven.compiler.release>26</maven.compiler.release>
-        <revision>0.0.3</revision>
+        <revision>0.0.4-SNAPSHOT</revision>
     </properties>
 
     <artifactId>json-rpc</artifactId>
@@ -35,7 +35,7 @@
     <scm>
         <developerConnection>scm:git:https://github.com/ralfspoeth/json-rpc.git</developerConnection>
         <url>scm:git:https://github.com/ralfspoeth/json-rpc</url>
-        <tag>json-rpc-0.0.3</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <build>
