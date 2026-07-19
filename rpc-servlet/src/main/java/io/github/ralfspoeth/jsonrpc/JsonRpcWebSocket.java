@@ -1,39 +1,35 @@
 package io.github.ralfspoeth.jsonrpc;
 
-import io.github.ralfspoeth.greysonrpc.GreysonRpcProcessor;
+import io.github.ralfspoeth.greylet.GreysonRpcWebSocket;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
 
-import jakarta.websocket.OnMessage;
-
-import java.io.IOException;
-import java.io.Reader;
-import java.io.StringWriter;
 import java.util.Map;
 
 /**
- * A WebSocket endpoint base class that handles JSON-RPC 2.0 requests
- * delivered as text messages.
+ * A WebSocket endpoint that handles JSON-RPC 2.0 requests delivered as
+ * text messages; the transport handling is inherited from
+ * {@link GreysonRpcWebSocket}.
  * <p>
- * Concrete subclasses are expected to be annotated with
- * {@link jakarta.websocket.server.ServerEndpoint} (or registered programmatically)
- * and to provide a dispatcher mapping method names to {@link Procedure}
- * implementations through the constructor.
- * <p>
- * Each incoming text message is processed by an internal
- * {@link GreysonRpcProcessor}, which performs validation, dispatching,
- * notification handling, batch processing and error wrapping
- * according to the JSON-RPC 2.0 specification.
- * <p>
- * If the incoming message is a notification (or a batch consisting solely
- * of notifications), the returned string is empty and no message is sent
- * back to the peer.
+ * The endpoint is concrete: either instantiate or subclass it
+ * programmatically with the dispatcher constructor, or deploy it in a
+ * CDI-enabled container with a producer of type
+ * {@code Map<String, Procedure>}. It must be registered under a path,
+ * e.g. by a subclass annotated with
+ * {@link jakarta.websocket.server.ServerEndpoint} or programmatically
+ * via {@link jakarta.websocket.server.ServerEndpointConfig}.
  *
  * @see JsonRpcServlet
- * @see io.github.ralfspoeth.greysonrpc.GreysonRpcProcessor
  * @see Procedure
  */
-public abstract class JsonRpcWebSocket {
+public class JsonRpcWebSocket extends GreysonRpcWebSocket {
 
-    private final GreysonRpcProcessor jsonRpcProcessor;
+    /**
+     * Constructs an endpoint without a dispatcher, intended for
+     * CDI-enabled containers which inject one after instantiation.
+     */
+    public JsonRpcWebSocket() {
+    }
 
     /**
      * Constructs a new JsonRpcWebSocket with the given procedure dispatcher.
@@ -41,31 +37,19 @@ public abstract class JsonRpcWebSocket {
      * @param dispatcher A map where keys are method names and values are
      *                   {@link Procedure} instances handling the corresponding calls.
      */
-    protected JsonRpcWebSocket(Map<String, Procedure> dispatcher) {
-        this.jsonRpcProcessor = Dispatch.of(dispatcher);
+    public JsonRpcWebSocket(Map<String, Procedure> dispatcher) {
+        super(Dispatch.of(dispatcher));
     }
 
     /**
-     * Handles an incoming WebSocket text message containing a JSON-RPC 2.0
-     * request, batch request, or notification.
-     * <p>
-     * The message is parsed and dispatched through the internal
-     * {@link GreysonRpcProcessor}. The serialized JSON-RPC response is returned
-     * as a {@link String}; for pure notifications (single or batch) the
-     * returned string is empty, and the WebSocket runtime will not send a
-     * reply back to the peer.
-     *
-     * @param message the raw JSON text received from the WebSocket peer.
-     * @return the serialized JSON-RPC response, or an empty string if the
-     * request was a notification (or a batch of notifications).
-     * @throws IOException if reading or writing the JSON payload fails.
+     * CDI initializer: adopts an injected procedure dispatcher.
+     * Runs after the superclass initializer, so a dispatcher producer
+     * wins over a business-function producer.
      */
-    @OnMessage
-    public String onMessage(String message) throws IOException {
-        try (var rdr = Reader.of(message); var wrtr = new StringWriter()) {
-            jsonRpcProcessor.process(rdr, wrtr);
-            return wrtr.toString();
+    @Inject
+    public void initDispatcher(Instance<Map<String, Procedure>> dispatcher) {
+        if (dispatcher.isResolvable()) {
+            setBusinessFunction(Dispatch.of(dispatcher.get()));
         }
     }
-
 }

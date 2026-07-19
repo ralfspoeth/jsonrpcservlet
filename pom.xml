@@ -15,13 +15,15 @@
     <modules>
         <module>greyson-rpc</module>
         <module>rpc-servlet</module>
+        <module>rpc-greylet</module>
     </modules>
 
     <name>json-rpc</name>
     <description>
         JSON-RPC 2.0 for Java: a transport-independent, Greyson-native
-        processor (greyson-rpc) and a servlet/websocket adapter with a
-        Greyson-free API (rpc-servlet).
+        processor (greyson-rpc) and servlet/websocket adapters with a
+        Greyson-free API (rpc-servlet) or a deliberately Greyson-native
+        one (rpc-greylet).
     </description>
     <url>https://github.com/ralfspoeth/jsonrpcservlet</url>
 
@@ -32,7 +34,7 @@
     </scm>
 
     <properties>
-        <maven.compiler.release>25</maven.compiler.release>
+        <maven.compiler.release>26</maven.compiler.release>
     </properties>
 
     <build>
@@ -48,6 +50,11 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -55,7 +62,7 @@
                 <configuration>
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     <!--suppress UnresolvedMavenProperty -->
-                    <argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
+                    <argLine>--enable-preview -javaagent:${org.mockito:mockito-core:jar}</argLine>
                 </configuration>
             </plugin>
             <plugin>

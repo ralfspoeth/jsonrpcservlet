@@ -8,24 +8,43 @@
         <version>0.0.2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>rpc-servlet</artifactId>
+    <artifactId>rpc-greylet</artifactId>
 
-    <name>rpc-servlet</name>
+    <name>rpc-greylet</name>
     <description>
-        A Java Servlet for handling JSON-RPC 2.0 requests.
+        Servlet and websocket adapters for JSON-RPC 2.0 that intentionally
+        expose the Greyson-native API of greyson-rpc.
     </description>
 
     <dependencies>
-        <!-- the Greyson-native adapters this module's classes extend -->
+        <!-- the JSON-RPC engine; part of this module's API, on purpose -->
         <dependency>
             <groupId>io.github.ralfspoeth</groupId>
-            <artifactId>rpc-greylet</artifactId>
+            <artifactId>greyson-rpc</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- Greyson: implementation detail of the Dispatch bridge -->
+        <!-- Greyson: part of this module's API, on purpose -->
         <dependency>
             <groupId>io.github.ralfspoeth</groupId>
             <artifactId>json</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.ralfspoeth</groupId>
+            <artifactId>utf8</artifactId>
+        </dependency>
+        <!-- web sockets -->
+        <dependency>
+            <groupId>jakarta.websocket</groupId>
+            <artifactId>jakarta.websocket-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.websocket</groupId>
+            <artifactId>jakarta.websocket-client-api</artifactId>
+        </dependency>
+        <!-- servlet api -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
         </dependency>
         <!-- CDI, optional: only active in CDI-enabled containers -->
         <dependency>
@@ -42,32 +61,6 @@
         <dependency>
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
-        </dependency>
-        <!-- testing -->
-        <dependency>
-            <groupId>io.github.ralfspoeth</groupId>
-            <artifactId>basix</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.github.ralfspoeth</groupId>
-            <artifactId>utf8</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty.ee10</groupId>
-            <artifactId>jetty-ee10-servlet</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

@@ -1,27 +1,30 @@
 package io.github.ralfspoeth.jsonrpc;
 
-import io.github.ralfspoeth.greysonrpc.GreysonRpcProcessor;
-import io.github.ralfspoeth.utf8.Utf8Reader;
-import io.github.ralfspoeth.utf8.Utf8Writer;
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import io.github.ralfspoeth.greylet.GreysonRpcServlet;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
 
-import java.io.IOException;
 import java.util.Map;
 
 /**
  * A servlet that handles JSON-RPC 2.0 requests.
- * It dispatches requests to registered {@link Procedure} implementations.
+ * It dispatches requests to registered {@link Procedure} implementations;
+ * the transport handling is inherited from {@link GreysonRpcServlet}.
+ * <p>
+ * The servlet is concrete: either instantiate it programmatically with
+ * the dispatcher constructor, or deploy it as-is in a CDI-enabled
+ * container with a producer of type {@code Map<String, Procedure>}.
+ * In a CDI container, such a dispatcher producer takes precedence over
+ * a business-function producer for the superclass.
  */
-public abstract class JsonRpcServlet extends HttpServlet {
+public class JsonRpcServlet extends GreysonRpcServlet {
 
     /**
-     * The MIME type for JSON content.
+     * Constructs a servlet without a dispatcher, intended for
+     * CDI-enabled containers which inject one after instantiation.
      */
-    private static final String JSON_CONTENT_TYPE = "application/json";
-
-    private final GreysonRpcProcessor jsonRpcProcessor;
+    public JsonRpcServlet() {
+    }
 
     /**
      * Constructs a new JsonRpcServlet with the given procedure dispatcher.
@@ -29,28 +32,18 @@ public abstract class JsonRpcServlet extends HttpServlet {
      * @param dispatcher A map where keys are method names and values are {@link Procedure} instances.
      */
     public JsonRpcServlet(Map<String, Procedure> dispatcher) {
-        jsonRpcProcessor = Dispatch.of(dispatcher);
+        super(Dispatch.of(dispatcher));
     }
 
     /**
-     * Handles HTTP POST requests for JSON-RPC.
-     * It reads the JSON-RPC request from the input stream, processes it, and writes the response to the output stream.
-     *
-     * @param req  The HttpServletRequest object that contains the request the client has made of the servlet.
-     * @param resp The HttpServletResponse object that contains the response the servlet sends to the client.
-     * @throws IOException      If the request for the POST could not be handled.
+     * CDI initializer: adopts an injected procedure dispatcher.
+     * Runs after the superclass initializer, so a dispatcher producer
+     * wins over a business-function producer.
      */
-    @Override
-    public void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-        if (JSON_CONTENT_TYPE.equals(req.getContentType())) {
-            resp.setContentType(JSON_CONTENT_TYPE);
-            try (var rdr = new Utf8Reader(req.getInputStream());
-                 var wrt = new Utf8Writer(resp.getOutputStream())
-            ) {
-                jsonRpcProcessor.process(rdr, wrt);
-            }
-        } else {
-            resp.setStatus(HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE);
+    @Inject
+    public void initDispatcher(Instance<Map<String, Procedure>> dispatcher) {
+        if (dispatcher.isResolvable()) {
+            setBusinessFunction(Dispatch.of(dispatcher.get()));
         }
     }
 }

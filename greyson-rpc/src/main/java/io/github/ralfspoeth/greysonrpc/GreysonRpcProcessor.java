@@ -3,7 +3,7 @@ package io.github.ralfspoeth.greysonrpc;
 import io.github.ralfspoeth.json.Greyson;
 import io.github.ralfspoeth.json.data.*;
 import io.github.ralfspoeth.json.io.JsonParseException;
-import org.jspecify.annotations.Nullable;
+import io.github.ralfspoeth.json.query.Queries;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -11,18 +11,22 @@ import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.function.BiFunction;
 
 import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
+import static java.lang.System.Logger.Level.*;
 
 /**
  * A JSON-RPC 2.0 server-side processor.
  * <p>
- * The incoming request is read into a {@link Builder} which is then
- * transformed <em>in place</em> into the response: the {@code jsonrpc}
- * and {@code id} members of a valid request are retained, {@code method}
- * and {@code params} are removed, and either {@code result} or
- * {@code error} is added.
+ * The incoming request is read into an immutable {@link JsonValue} and
+ * each response is built afresh: the {@code id} of a valid request is
+ * carried over, and either {@code result} or {@code error} is added.
+ * The requests of a batch are processed concurrently using structured
+ * concurrency; their responses retain the order of the requests, with
+ * notifications dropped.
  * <p>
  * The business function receives the method name and the {@code params}
  * value ({@link JsonNull#INSTANCE} if absent) and returns the result as
@@ -34,6 +38,11 @@ import static io.github.ralfspoeth.json.data.Builder.objectBuilder;
  * &rarr; -32603 (internal error).
  */
 public class GreysonRpcProcessor {
+
+    private static final LazyConstant<System.Logger> LOGGER = LazyConstant.of(
+            () -> System.getLogger(GreysonRpcProcessor.class.getName())
+    );
+
     private static final String VERSION = "2.0";
 
     private final BiFunction<String, JsonValue, JsonValue> businessFunction;
@@ -42,7 +51,6 @@ public class GreysonRpcProcessor {
         this.businessFunction = Objects.requireNonNull(businessFunction);
     }
 
-
     /**
      * Read a single request or a batch of requests from {@code in},
      * process it, and write the response(s) to {@code out}.
@@ -50,8 +58,8 @@ public class GreysonRpcProcessor {
      */
     public void process(Reader in, Writer out) throws IOException {
         try {
-            Greyson.readBuilder(in).ifPresentOrElse(
-                    builder -> dispatch(builder, out),
+            Greyson.readValue(in).ifPresentOrElse(
+                    value -> dispatch(value, out),
                     // empty input
                     () -> writeError(out, -32700, "Parse error")
             );
@@ -66,84 +74,96 @@ public class GreysonRpcProcessor {
      * Dispatch on the shape of the input: a single request, a batch,
      * or an invalid top-level basic value.
      */
-    private void dispatch(Builder<? extends JsonValue> builder, Writer out) {
-        switch (builder) {
+    private void dispatch(JsonValue value, Writer out) {
+        switch (value) {
             // single request
-            case Builder.ObjectBuilder ob -> {
-                var response = respond(ob);
-                if (response != null) {
-                    write(out, response.build());
-                }
-            }
-            // batch
-            case Builder.ArrayBuilder ab -> {
-                if (ab.isEmpty()) { // rpc call with an empty array is invalid
+            case JsonObject obj -> respond(obj).ifPresent(response -> Greyson.writeValue(out, response));
+            // batch: requests are processed concurrently,
+            // responses retain the order of their requests
+            case JsonArray arr -> {
+                if (arr.isEmpty()) { // rpc call with an empty array is invalid
                     writeError(out, -32600, "Invalid Request");
-                    return;
-                }
-                for (var li = ab.data().listIterator(); li.hasNext(); ) {
-                    var response = respond(li.next());
-                    if (response != null) {
-                        li.set(response);
-                    } else {
-                        li.remove();
+                } else {
+                    try (var scope = StructuredTaskScope.open()) {
+                        var subtasks = arr.elements().stream()
+                                .map(element -> scope.fork(() -> respond(element)))
+                                .toList();
+                        scope.join();
+                        var responses = subtasks.stream()
+                                .map(StructuredTaskScope.Subtask::get)
+                                .flatMap(Optional::stream)
+                                .collect(Queries.toJsonArray());
+                        if (!responses.isEmpty()) {
+                            Greyson.writeValue(out, responses);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        writeError(out, -32000, "Server error; batch processing interrupted");
                     }
-                }
-
-                if (!ab.data().isEmpty()) { // anything left after dropping notifications?
-                    Greyson.writeBuilder(out, ab);
                 }
             }
             // a top-level basic value is not a valid request
-            case Builder.BasicBuilder ignored -> writeError(out, -32600, "Invalid Request");
+            default -> writeError(out, -32600, "Invalid Request");
         }
-    }
-
-    private static void write(Writer out, JsonValue value) {
-        Greyson.writeValue(out, value);
     }
 
     private static void writeError(Writer out, int code, String message) {
-        write(out, error(JsonNull.INSTANCE, code, message).build());
+        LOGGER.get().log(WARNING, "{0} ({1})", message, code);
+        Greyson.writeValue(out, error(JsonNull.INSTANCE, code, message));
     }
 
     /**
-     * Process a single request builder in place and return the response
-     * builder, or {@code null} for notifications.
+     * Invoke the business function, logging the invocation at info
+     * and its result at debug level.
      */
-    private Builder.@Nullable ObjectBuilder respond(Builder<? extends JsonValue> element) {
-        if (!(element instanceof Builder.ObjectBuilder ob)) {
-            return error(JsonNull.INSTANCE, -32600, "Invalid Request");
+    private JsonValue invoke(String method, JsonValue params) {
+        var log = LOGGER.get();
+        log.log(INFO, "invoking {0} with params {1}", method, params);
+        var result = businessFunction.apply(method, params);
+        log.log(DEBUG, "invoked {0} with params {1}: {2}", method, params, result);
+        return result;
+    }
+
+    /**
+     * Process a single request and return the response,
+     * or {@link Optional#empty()} for notifications.
+     */
+    private Optional<JsonObject> respond(JsonValue element) {
+        if (!(element instanceof JsonObject request)) {
+            LOGGER.get().log(WARNING, "invalid request, not an object: {0}", element);
+            return Optional.of(error(JsonNull.INSTANCE, -32600, "Invalid Request"));
         }
-        var request = ob.build(); // immutable snapshot for validation
         if (!isValidRequest(request)) {
+            LOGGER.get().log(WARNING, "invalid request: {0}", request);
             var id = request.get("id").filter(GreysonRpcProcessor::isValidId).orElse(JsonNull.INSTANCE);
-            return error(id, -32600, "Invalid Request");
+            return Optional.of(error(id, -32600, "Invalid Request"));
         }
         var method = request.get("method").flatMap(JsonValue::string).orElseThrow();
         var params = request.get("params").orElse(JsonNull.INSTANCE);
         if (!request.members().containsKey("id")) { // notification: invoke, never respond
             try {
-                businessFunction.apply(method, params);
-            } catch (RuntimeException ignored) {
-                // errors of notifications are never reported
+                invoke(method, params);
+            } catch (RuntimeException e) {
+                // errors of notifications are never reported to the peer
+                LOGGER.get().log(WARNING, "notification %s failed".formatted(method), e);
             }
-            return null;
+            return Optional.empty();
         }
-        // in-place transformation of the request into the response:
-        // jsonrpc and id survive, method and params are removed,
-        // result or error is added
-        ob.remove("method").remove("params");
+        var id = request.members().get("id");
+        JsonObject response;
         try {
-            ob.put("result", businessFunction.apply(method, params));
+            response = result(id, invoke(method, params));
         } catch (NoSuchElementException | UnsupportedOperationException e) {
-            ob.put("error", errorObject(-32601, "Method not found"));
+            LOGGER.get().log(WARNING, "method not found: %s".formatted(method), e);
+            response = error(id, -32601, "Method not found");
         } catch (IllegalArgumentException e) {
-            ob.put("error", errorObject(-32602, "Invalid params"));
+            LOGGER.get().log(WARNING, "invalid params for %s: %s".formatted(method, params), e);
+            response = error(id, -32602, "Invalid params");
         } catch (RuntimeException e) {
-            ob.put("error", errorObject(-32603, "Internal error"));
+            LOGGER.get().log(WARNING, "internal error in %s".formatted(method), e);
+            response = error(id, -32603, "Internal error");
         }
-        return ob;
+        return Optional.of(response);
     }
 
     private static boolean isValidRequest(JsonObject request) {
@@ -157,11 +177,20 @@ public class GreysonRpcProcessor {
         return id instanceof JsonString || id instanceof JsonNumber || id instanceof JsonNull;
     }
 
-    private static Builder.ObjectBuilder error(JsonValue id, int code, String message) {
+    private static JsonObject result(JsonValue id, JsonValue result) {
+        return objectBuilder()
+                .putBasic("jsonrpc", VERSION)
+                .put("result", result)
+                .put("id", id)
+                .build();
+    }
+
+    private static JsonObject error(JsonValue id, int code, String message) {
         return objectBuilder()
                 .putBasic("jsonrpc", VERSION)
                 .put("error", errorObject(code, message))
-                .put("id", id);
+                .put("id", id)
+                .build();
     }
 
     private static JsonObject errorObject(int code, String message) {

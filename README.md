@@ -18,6 +18,9 @@ The project consists of two modules:
 *   `rpc-servlet` — servlet and websocket adapters with a completely
     Greyson-free API: implement `Procedure` in terms of plain
     `Map`/`List`/`Object` values; no Greyson types appear at compile time.
+*   `rpc-greylet` — the same adapters with the Greyson-native API leaked
+    on purpose: provide a `BiFunction<String, JsonValue, JsonValue>`
+    directly and work with Greyson's `JsonValue` types throughout.
 
 ## Features
 

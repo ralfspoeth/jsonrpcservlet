@@ -1,19 +1,19 @@
 package io.github.ralfspoeth.jsonrpc;
 
-import io.github.ralfspoeth.greysonrpc.GreysonRpcProcessor;
 import io.github.ralfspoeth.json.data.JsonValue;
 import io.github.ralfspoeth.json.query.Queries;
 
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.function.BiFunction;
 
 /**
  * Internal bridge from the Greyson-free {@link Procedure} API to the
- * Greyson-native {@link GreysonRpcProcessor}. Unknown methods map to
- * -32601 (method not found); runtime exceptions thrown by procedures
- * propagate unwrapped so the spec error-code mapping of
- * {@link GreysonRpcProcessor} applies.
+ * Greyson-native business function of the JSON-RPC engine. Unknown
+ * methods map to -32601 (method not found); runtime exceptions thrown
+ * by procedures propagate unwrapped so the engine's spec error-code
+ * mapping applies.
  */
 final class Dispatch {
 
@@ -21,9 +21,9 @@ final class Dispatch {
         // no instances
     }
 
-    static GreysonRpcProcessor of(Map<String, Procedure> dispatcher) {
+    static BiFunction<String, JsonValue, JsonValue> of(Map<String, Procedure> dispatcher) {
         Objects.requireNonNull(dispatcher);
-        return new GreysonRpcProcessor((method, params) -> {
+        return (method, params) -> {
             var procedure = dispatcher.get(method);
             if (procedure == null) {
                 throw new NoSuchElementException("Method not found: " + method);
@@ -35,6 +35,6 @@ final class Dispatch {
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-        });
+        };
     }
 }
